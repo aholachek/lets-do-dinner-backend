@@ -1,90 +1,59 @@
-
 var rp = require('request-promise');
-rp.debug = true;
 
-var geolib = require('geolib');
+var server = require('./api_server');
+var yelpCategories = require('./yelp_categories.json');
 
-var keys = require('./secret_keys');
+//start server
+server();
 
-var locs = {
-  'Davis Square' : { latitude : 42.3967, longitude : -71.1223 },
-  'Union Square' : { latitude : 42.3837, longitude : -71.0958 },
-  'Kendall Square' : { latitude : 42.3629, longitude : 71.0901 },
-}
-
-var center  = geolib.getCenter(locs);
-
-debugger
-
-
-
-var cuisines = [];
-
-process.argv.forEach(function (val, index, array) {
-  if (index > 1){
-    cuisines.push(val);
-  }
-});
-
-var yelp_access_token;
-
-function getYelpAccessToken(){
-  var options = {
-      method: 'POST',
-      uri: 'https://api.yelp.com/oauth2/token',
-      form : {
-          client_id : keys.Yelp.id,
-          client_secret : keys.Yelp.secret,
-          grant_type : 'client_credentials'
-      },
-      json: true // Automatically stringifies the body to JSON
-  };
-
-  return rp(options)
-      .then(function (response) {
-        yelp_access_token = response.access_token;
-      })
-      .catch(function (err) {
-          // API call failed...
-      });
-
-}
-
-function queryYelp(){
-  //make sure token is already there, only needs to happen once
-  if (!yelp_access_token) {
-    getYelpAccessToken().then(function(){queryYelp(arguments)});
-  } else {
-
-    debugger
-
-    var options = {
-        uri: 'https://api.yelp.com/v3/businesses/search',
-        qs : {
-          term : 'restaurants',
-          ll : center.latitude + ',' + center.longitude,
-          categories : cuisines.join(','),
-          limit : 10,
-          price : '1,2,3',
-        },
-        headers: {
-       'Authorization': 'Bearer ' + yelp_access_token
-   },
-        json: true // Automatically stringifies the body to JSON
-    };
-
-    rp(options)
-        .then(function (response) {
-        debugger
-        })
-        .catch(function(error){
-          debugger
-        })
-
-
-
-  }
-
-}
-
-queryYelp();
+// var userData = {
+//   1: {
+//     preferences: {
+//       price: [1, 2],
+//       cuisine: {
+//         yes: ['afghani', 'korean', 'indpak'],
+//         no: ['pizza', 'polish']
+//       }
+//     },
+//     locations: {
+//       //jp
+//       from: {latitude : 42.3097, longitude: -71.1151},
+//       //northend
+//       to: {latitude : 42.3647, longitude : -71.0542}
+//     }
+//   },
+//   2: {
+//     preferences: {
+//       price: [2, 3, 4],
+//       cuisine: {
+//         yes: ['pubfood', 'vegetarian'],
+//         no: ['chinese', 'sushi']
+//       }
+//     },
+//     locations: {
+//       //waltham
+//       from: {latitude : 42.3765, longitude: -71.2356},
+//       //cambridgeport
+//       to: {latitude: 42.3596, longitude :  -71.1077}
+//     }
+//   }
+// }
+//
+// var options = {
+//   method: 'POST',
+//   uri: 'http://localhost:4000',
+//   body: {
+//     userData: userData,
+//     term: 'dinner'
+//   },
+//   json: true // Automatically stringifies the body to JSON
+// };
+//
+// return rp(options)
+//   .then(function(response) {
+//     debugger
+//
+//   })
+//   .catch(function(err) {
+//     // API call failed...
+//   });
