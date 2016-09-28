@@ -1,3 +1,5 @@
+var rp = require('request-promise');
+
 var userData = {
   1: {
       price: [1, 2],
