@@ -1,9 +1,13 @@
+//get environment variables from .env
+require('dotenv').config();
+
 var rp = require('request-promise');
 
 var _ = require('lodash');
 var geolib = require('geolib');
 var yelpCategories = require('./yelp_categories.json');
 
+//this needs to be outside function scope
 var yelp_access_token;
 
 function getYelpAccessToken() {
@@ -15,7 +19,7 @@ function getYelpAccessToken() {
       client_secret: process.env.YELP_SECRET,
       grant_type: 'client_credentials'
     },
-    json: true // Automatically stringifies the body to JSON
+    json: true
   };
 
   return rp(options)
