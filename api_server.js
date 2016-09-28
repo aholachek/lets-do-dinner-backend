@@ -7,12 +7,14 @@ var findTopMatches = require('./findTopMatches');
 
 var port = process.env.PORT || 4000;
 
-app.use(bodyParser.json()); 
+app.use(bodyParser.json());
 
 //allow requests only from my website and localhost
 var corsOptions = {
   origin: [/^http:\/\/alex\.holachek\.com.*/, /^http:\/\/localhost:.{4}/]
 };
+
+app.options('/', cors(corsOptions));
 
 app.post('/', cors(corsOptions), function(req, res) {
   findTopMatches(req.body).then(function(results) {
