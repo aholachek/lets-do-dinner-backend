@@ -1,9 +1,28 @@
 var rp = require('request-promise');
-rp.debug = true;
 
 var _ = require('lodash');
 var geolib = require('geolib');
-var keys = require('./secret_keys');
+
+/*
+get secret keys
+ */
+
+var yelpSecret, yelpId, googleKey;
+
+//is there a nicer way to do this??
+if (process.env.NODE_ENV === 'dev'){
+
+  var keys = require('./secret_keys');
+  yelpSecret = keys.Yelp.secret;
+  yelpId = keys.Yelp.id;
+  googleKey = keys.Google.key;
+
+} else {
+  //heroku
+  yelpSecret = process.env.yelpSecret;
+  yelpId = process.env.yelpId;
+  googleKey = process.env.googleKey;
+}
 
 var yelpCategories = require('./yelp_categories.json');
 
@@ -14,8 +33,8 @@ function getYelpAccessToken() {
     method: 'POST',
     uri: 'https://api.yelp.com/oauth2/token',
     form: {
-      client_id: keys.Yelp.id,
-      client_secret: keys.Yelp.secret,
+      client_id: yelpId,
+      client_secret: yelpSecret,
       grant_type: 'client_credentials'
     },
     json: true // Automatically stringifies the body to JSON
@@ -196,7 +215,7 @@ function getTravelTime(origins, destinations) {
       origins: undefined,
       mode: undefined,
       destinations: destinations.join('|'),
-      key: keys.Google.key
+      key: googleKey
     },
     json: true
 
