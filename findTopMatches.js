@@ -29,47 +29,52 @@ function getYelpAccessToken() {
 
 }
 
-function queryYelp(term, preferences, center) {
+function queryYelp(term, preferences, centers) {
   //make sure token is already there, only needs to happen once
   if (!yelp_access_token) {
     return getYelpAccessToken().then(function() {
-      return queryYelp(term, preferences, center);
+      return queryYelp(term, preferences, centers);
     });
 
   } else {
 
-    var options = {
-      uri: 'https://api.yelp.com/v3/businesses/search',
-      qs: {
-        term: term,
-        latitude: center.latitude,
-        longitude: center.longitude,
-        categories: _.keys(preferences.yes).join(','),
-        limit: 25,
-        price: preferences.price.join(','),
-        sort_by: 'distance',
-        actionlinks : true
-      },
-      headers: {
-        'Authorization': 'Bearer ' + yelp_access_token
-      },
-      json: true
-    };
+    var nestedPromises = centers.map(function(c) {
 
-    var allRestaurantOptions = _.cloneDeep(options);
-    delete allRestaurantOptions.qs.categories;
-    allRestaurantOptions.qs.limit = 10;
-    delete allRestaurantOptions.sort_by;
+      var options = {
+        uri: 'https://api.yelp.com/v3/businesses/search',
+        qs: {
+          term: term,
+          latitude: c.split(',')[0],
+          longitude: c.split(',')[1],
+          categories: _.keys(preferences.yes).join(','),
+          limit: 20,
+          price: preferences.price.join(','),
+        },
+        headers: {
+          'Authorization': 'Bearer ' + yelp_access_token
+        },
+        json: true
+      };
 
-    return Promise.all([rp(options), rp(allRestaurantOptions)]);
+      //wildcard matches
+      var allRestaurantOptions = _.cloneDeep(options);
+      delete allRestaurantOptions.qs.categories;
+
+      return [rp(options), rp(allRestaurantOptions)];
+
+    });
+
+    return Promise.all(_.flatten(nestedPromises));
   }
 }
 
 function filterMatchesByPreferences(preferences, responses) {
 
-  var matches = responses[0].businesses.concat(responses[1].businesses);
-  //dedupe
+  var matches = _.flatten(responses.map(function(r) {
+    return r.businesses
+  }));
 
+  //dedupe
   matches = _.uniqBy(matches, function(m) {
     return m.id
   });
@@ -92,40 +97,26 @@ function filterMatchesByPreferences(preferences, responses) {
   //we will be finding coordinates for this many restaurants
   matches = _.sortBy(matches, function(m) {
     return -m.rating
-  }).slice(0, 10);
+  }).slice(0, 20);
 
   return matches;
 }
 
 function findMostConvenientRestaurants(locationData, matches) {
 
-  var getDistanceTimes = matches.map(function(b) {
-    var destination = [b.coordinates.latitude + ',' + b.coordinates.longitude];
-    return getTravelTime(locationData, destination);
+  var destinations = matches.map(function(b) {
+    return [b.coordinates.latitude + ',' + b.coordinates.longitude];
   });
 
-  return Promise.all(getDistanceTimes).then(function(times) {
+  return getTravelTime(locationData, destinations).then(function(destinationDict) {
 
-    times = times.map(function(t) {
-      //get a dict with userId : time
-      var individual = {};
-      t.forEach(function(time, index) {
-        individual[locationData[index].userId] = {time : time, mode : locationData[index].mode }
-      });
-      return {
-        individual: individual,
-        total: _.sum(t)
-      };
+    matches.forEach(function(m, i) {
+      m.time = destinationDict[m.coordinates.latitude + ',' + m.coordinates.longitude];
     });
 
-    matches.forEach(function(match, index, list) {
-      list[index].time = times[index];
+    var sortedMatches = _.sortBy(matches, function(b) {
+      return b.time.total
     });
-
-    var sortedMatches = _.sortBy(matches,
-      function(b) {
-        return b.time.total;
-      });
 
     return sortedMatches
 
@@ -138,42 +129,53 @@ function findMostConvenientLoci(locationData, loci) {
   //now just a list of lat/long w/o quadrant info
   lociVals = _.values(loci);
 
-  var getDistanceTimes = lociVals.map(function(v) {
-    var destination = [v.latitude + ',' + v.longitude];
-    return getTravelTime(locationData, destination);
+  var destinations = lociVals.map(function(v) {
+    return v.latitude + ',' + v.longitude;
   });
 
-  function variance(arr){
-    var mean = arr.reduce(function(a, b){return a + b}, 0)/arr.length;
-    var variances = arr.map(function(n){ return Math.pow(n - mean, 2)});
-    var variance = variances.reduce(function(a, b){return a + b}, 0)/arr.length;
+  function variance(arr) {
+    var mean = arr.reduce(function(a, b) {
+      return a + b
+    }, 0) / arr.length;
+    var variances = arr.map(function(n) {
+      return Math.pow(n - mean, 2)
+    });
+    var variance = variances.reduce(function(a, b) {
+      return a + b
+    }, 0) / arr.length;
     return variance
   }
 
-  return Promise.all(getDistanceTimes).then(function(times, index) {
+  return getTravelTime(locationData, destinations).then(function(times, index) {
 
-    //where times is initially an array of times for each person
-    times = times.map(function(t) {
-      return {
-        total : _.sum(t),
-        variance : variance(t)
-      }
+    //add variance info
+    _.forEach(times, function(t, v) {
+      t.variance = variance(_.values(t.origins));
     });
 
-    var minTime = _.min(times.map(function(t){return t.total}));
-    var minVariance = _.min(times.map(function(t){return t.variance}));
+    var minTime = _.min(_.values(times).map(function(t) {
+      return t.total
+    }));
+    var minVariance = _.min(_.values(times).map(function(t) {
+      return t.variance
+    }));
 
-    //weight 'minimizing time' a bit more than 'minimizing variance'
-    var scores = times.map(function(t){
-      return (minTime/t.total * 1.5) + minVariance/t.variance
+    //if there are only 2 people, minimize variance
+    //otherwise, lean on minimizing time
+    _.forEach(times, function(v, k) {
+      if (locationData.length > 2) v.score = (minTime / v.total * 1.5) + minVariance / v.variance;
+      else v.score = minVariance / v.variance;
     });
 
-    var maxScore = _.max(scores);
-    var maxScoreIndex = scores.indexOf(maxScore);
+    scores = _.sortBy(_.toPairs(times), function(t) {
+      return -t[1].score
+    });
 
-    console.log('most convenient loci is:', _.keys(loci)[maxScoreIndex])
-    console.log(_.keys(loci), times)
-    return lociVals[maxScoreIndex];
+    console.log('most convenient locis are:', scores.slice(0, 2))
+
+    return scores.slice(0, 2).map(function(s) {
+      return s[0]
+    });
 
   });
 
@@ -203,49 +205,61 @@ function getTravelTime(origins, destinations) {
 
   };
 
-  var modePromises = [];
+  var destinationDict = {};
+  destinations.forEach(function(d) {
+    destinationDict[d] = {
+      total: undefined,
+      origins: {},
+    }
+  });
 
-  _.forEach(modeDict, function(arr, mode) {
+  var allPromises = [];
+
+  _.toPairs(modeDict).forEach(function(pair) {
+
+    var mode = pair[0];
+    var arr = pair[1];
     var opts = _.cloneDeep(options);
     opts.qs.mode = mode;
     opts.qs.origins = arr.map(function(location) {
       return location.latitude + ',' + location.longitude;
     }).join('|');
 
-    modePromises.push(rp(opts));
-
+    var prom = rp(opts);
+    allPromises.push(prom);
+    prom.then(function(response) {
+      //iterate through origins (where people are)
+      //each row represents a different origin
+      response.rows.map(function(row, index) {
+        var originId = arr[index].userId;
+        row.elements.forEach(function(d, i) {
+          //destination is "long,lat"
+          var destination = destinations[i];
+          destinationDict[destination].origins[originId] = d.duration.value;
+        });
+      });
+    });
   });
 
-  return Promise.all(modePromises)
-  //messy nested structure, have to get all the times out to add them later
-    .then(function(responses) {
-
-      var minuteVals = [];
-
-      responses.forEach(
-        function(r) {
-          return r.rows.map(
-            function(r) {
-              return r.elements.map(
-                function(e) {
-                  if (!e.duration) console.log('error!', responses);
-                  //convert seconds to minutes
-                  minuteVals.push(Math.ceil(e.duration.value/60));
-                });
-            });
-        });
-
-      return minuteVals;
-
+  return Promise.all(allPromises).then(function() {
+    //finally, sum up all the vals
+    _.forEach(destinationDict, function(d, k) {
+      d.total = _.sum(_.values(d.origins));
     });
+
+    return destinationDict;
+  });
 }
 
 //maybe later get smarter about ranking?
 function rankMatches(preferences, matches) {
+  debugger
 
-  return _.sortBy(matches, function(m, i) {
-    return m.time.total;
-  });
+  return matches;
+
+  // return _.sortBy(matches, function(m, i) {
+  //   return m.time.total;
+  // });
 
 }
 
