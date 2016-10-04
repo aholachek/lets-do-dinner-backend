@@ -47,7 +47,7 @@ function queryYelp(term, preferences, centers) {
           latitude: c.split(',')[0],
           longitude: c.split(',')[1],
           categories: _.keys(preferences.yes).join(','),
-          limit: 20,
+          limit: 10,
           price: preferences.price.join(','),
         },
         headers: {
@@ -59,6 +59,7 @@ function queryYelp(term, preferences, centers) {
       //wildcard matches
       var allRestaurantOptions = _.cloneDeep(options);
       delete allRestaurantOptions.qs.categories;
+      allRestaurantOptions.limit = 5;
 
       return [rp(options), rp(allRestaurantOptions)];
 
@@ -97,7 +98,7 @@ function filterMatchesByPreferences(preferences, responses) {
   //we will be finding coordinates for this many restaurants
   matches = _.sortBy(matches, function(m) {
     return -m.rating
-  }).slice(0, 20);
+  }).slice(0, 25);
 
   return matches;
 }
@@ -114,8 +115,8 @@ function findMostConvenientRestaurants(locationData, matches) {
       m.time = destinationDict[m.coordinates.latitude + ',' + m.coordinates.longitude];
     });
 
-    var sortedMatches = _.sortBy(matches, function(b) {
-      return b.time.total
+    var sortedMatches = _.sortBy(matches, function(m) {
+      return -m.time.score
     });
 
     return sortedMatches
@@ -133,39 +134,7 @@ function findMostConvenientLoci(locationData, loci) {
     return v.latitude + ',' + v.longitude;
   });
 
-  function variance(arr) {
-    var mean = arr.reduce(function(a, b) {
-      return a + b
-    }, 0) / arr.length;
-    var variances = arr.map(function(n) {
-      return Math.pow(n - mean, 2)
-    });
-    var variance = variances.reduce(function(a, b) {
-      return a + b
-    }, 0) / arr.length;
-    return variance
-  }
-
   return getTravelTime(locationData, destinations).then(function(times, index) {
-
-    //add variance info
-    _.forEach(times, function(t, v) {
-      t.variance = variance(_.values(t.origins));
-    });
-
-    var minTime = _.min(_.values(times).map(function(t) {
-      return t.total
-    }));
-    var minVariance = _.min(_.values(times).map(function(t) {
-      return t.variance
-    }));
-
-    //if there are only 2 people, minimize variance
-    //otherwise, lean on minimizing time
-    _.forEach(times, function(v, k) {
-      if (locationData.length > 2) v.score = (minTime / v.total * 1.5) + minVariance / v.variance;
-      else v.score = minVariance / v.variance;
-    });
 
     scores = _.sortBy(_.toPairs(times), function(t) {
       return -t[1].score
@@ -179,6 +148,19 @@ function findMostConvenientLoci(locationData, loci) {
 
   });
 
+}
+
+function variance(arr) {
+  var mean = arr.reduce(function(a, b) {
+    return a + b
+  }, 0) / arr.length;
+  var variances = arr.map(function(n) {
+    return Math.pow(n - mean, 2)
+  });
+  var variance = variances.reduce(function(a, b) {
+    return a + b
+  }, 0) / arr.length;
+  return variance
 }
 
 /* expects an array of origins in the form :
@@ -209,6 +191,7 @@ function getTravelTime(origins, destinations) {
   destinations.forEach(function(d) {
     destinationDict[d] = {
       total: undefined,
+      variance: undefined,
       origins: {},
     }
   });
@@ -235,32 +218,42 @@ function getTravelTime(origins, destinations) {
         row.elements.forEach(function(d, i) {
           //destination is "long,lat"
           var destination = destinations[i];
-          destinationDict[destination].origins[originId] = d.duration.value;
+          try {
+            destinationDict[destination].origins[originId] = d.duration.value;
+          } catch (e) {
+            //sometimes there's an error, not sure why
+            console.log(e, row.elements);
+          }
         });
       });
     });
   });
 
+  //use 'all' just to verify that destinationDict has been filled
   return Promise.all(allPromises).then(function() {
     //finally, sum up all the vals
-    _.forEach(destinationDict, function(d, k) {
-      d.total = _.sum(_.values(d.origins));
+    _.forEach(destinationDict, function(v, k) {
+      v.total = _.sum(_.values(v.origins));
+      v.variance = variance(_.values(v.origins));
+    });
+
+    var minTime = _.min(_.values(destinationDict).map(function(t) {
+      return t.total
+    }));
+
+    var minVariance = _.min(_.values(destinationDict).map(function(t) {
+      return t.variance
+    }));
+
+    //if there are only 2 people, minimize variance
+    //otherwise, lean on minimizing time
+    _.forEach(destinationDict, function(v, k) {
+      if (origins.length > 2) v.score = (minTime / v.total * 1.5) + minVariance / v.variance;
+      else v.score = (minTime / v.total) + (minVariance / v.variance * 1.5);
     });
 
     return destinationDict;
   });
-}
-
-//maybe later get smarter about ranking?
-function rankMatches(preferences, matches) {
-  debugger
-
-  return matches;
-
-  // return _.sortBy(matches, function(m, i) {
-  //   return m.time.total;
-  // });
-
 }
 
 function transformPreferences(preferences) {
@@ -355,7 +348,6 @@ function convertUserDataToLocationsArray(userData) {
     return _.extend({
       userId: u.userId
     }, u.locations.from);
-
   });
 
 }
@@ -388,8 +380,7 @@ function findTopMatches(data) {
   return findMostConvenientLoci(locationData, findLoci(locations))
     .then(_.partial(queryYelp, term, transformedPreferences))
     .then(_.partial(filterMatchesByPreferences, transformedPreferences))
-    .then(_.partial(findMostConvenientRestaurants, locationData))
-    .then(_.partial(rankMatches, transformedPreferences));
+    .then(_.partial(findMostConvenientRestaurants, locationData));
 }
 
 module.exports = findTopMatches
