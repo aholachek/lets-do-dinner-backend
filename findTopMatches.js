@@ -47,7 +47,7 @@ function queryYelp(term, preferences, centers) {
           latitude: c.split(',')[0],
           longitude: c.split(',')[1],
           categories: _.keys(preferences.yes).join(','),
-          limit: 10,
+          limit: 15,
           price: preferences.price.join(','),
         },
         headers: {
@@ -59,7 +59,7 @@ function queryYelp(term, preferences, centers) {
       //wildcard matches
       var allRestaurantOptions = _.cloneDeep(options);
       delete allRestaurantOptions.qs.categories;
-      allRestaurantOptions.limit = 5;
+      allRestaurantOptions.limit = 10;
 
       return [rp(options), rp(allRestaurantOptions)];
 
@@ -94,11 +94,27 @@ function filterMatchesByPreferences(preferences, responses) {
     }
   });
 
-  //sort based on star rating
+  matches.forEach(function(m) {
+    var categories = m.categories.map(function(c) {
+      return c.alias
+    });
+    var score = _.sum(categories.map(function(c) {
+      if (preferences.yes[c]) return preferences.yes[c];
+      else return 0;
+    }));
+    m.preferenceScore = score;
+  });
+
+  var ratingMax = _.max(matches.map(function(m) {
+    return m.rating
+  }));
+  var preferenceMax = _.max(matches.map(function(m){ return m.preferenceScore }));
+
+  //sort based on star rating + preference rating
   //we will be finding coordinates for this many restaurants
   matches = _.sortBy(matches, function(m) {
-    return -m.rating
-  }).slice(0, 25);
+    return -((m.rating / ratingMax) * (m.preferenceScore/ preferenceMax))
+  }).slice(0, 20);
 
   return matches;
 }
@@ -262,12 +278,16 @@ function transformPreferences(preferences) {
   var max = 4;
   var min = 4;
   preferences.forEach(function(p) {
+    //person unchecked all boxes
+    if (!p.price.length) {
+      p.price = [1, 2, 3, 4]
+    }
     var userMax = _.max(p.price),
       userMin = _.min(p.price);
     if (userMax < max) {
-      max = userMax
+      max = userMax;
     }
-    if (userMin < min) min = userMin
+    if (userMin < min) min = userMin;
   });
 
   //combine the cuisine preferences

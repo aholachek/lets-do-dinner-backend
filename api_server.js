@@ -10,9 +10,14 @@ var port = process.env.PORT || 4000;
 app.use(bodyParser.json());
 
 //allow requests only from my website and localhost
+
 var corsOptions = {
-  origin: [/^http:\/\/alex\.holachek\.com.*/, /^http:\/\/localhost:.{4}/]
+  origin: [/^http:\/\/alex\.holachek\.com.*/]
 };
+
+if (process.env.NODE_ENV === 'development'){
+  corsOptions.origin.push(/^http:\/\/localhost:.{4}/);
+}
 
 app.options('/', cors(corsOptions));
 
