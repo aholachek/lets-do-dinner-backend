@@ -114,7 +114,8 @@ function filterMatchesByPreferences(preferences, responses) {
   //we will be finding coordinates for this many restaurants
   matches = _.sortBy(matches, function(m) {
     return -((m.rating / ratingMax) * (m.preferenceScore/ preferenceMax))
-  }).slice(0, 20);
+    //google api limits are strict, or else this would be higher
+  }).slice(0, 15);
 
   return matches;
 }
