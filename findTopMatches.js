@@ -56,16 +56,22 @@ function queryYelp(term, preferences, centers) {
         json: true
       };
 
-      //wildcard matches
-      var allRestaurantOptions = _.cloneDeep(options);
-      delete allRestaurantOptions.qs.categories;
-      allRestaurantOptions.limit = 10;
+      //add in wildcard matches only if people entered in preferences
+      if (_.keys(preferences.yes).length){
 
-      return [rp(options), rp(allRestaurantOptions)];
+        var allRestaurantOptions = _.cloneDeep(options);
+        delete allRestaurantOptions.qs.categories;
+        allRestaurantOptions.limit = 10;
+
+        return [rp(options), rp(allRestaurantOptions)];
+
+      } else {
+        return [rp(options)];
+      }
 
     });
 
-    return Promise.all(_.flatten(nestedPromises));
+    return Promise.all(_.flatten(nestedPromises))
   }
 }
 
@@ -115,7 +121,7 @@ function filterMatchesByPreferences(preferences, responses) {
   matches = _.sortBy(matches, function(m) {
     return -((m.rating / ratingMax) * (m.preferenceScore/ preferenceMax))
     //google api limits are strict, or else this would be higher
-  }).slice(0, 15);
+  }).slice(0, 10);
 
   return matches;
 }
@@ -129,7 +135,15 @@ function findMostConvenientRestaurants(locationData, matches) {
   return getTravelTime(locationData, destinations).then(function(destinationDict) {
 
     matches.forEach(function(m, i) {
-      m.time = destinationDict[m.coordinates.latitude + ',' + m.coordinates.longitude];
+      var timeData = destinationDict[m.coordinates.latitude + ',' + m.coordinates.longitude];
+      if (timeData && timeData.variance !== NaN){
+        m.time = timeData;
+      }
+    });
+
+    //get rid of matches without time data
+    matches = matches.filter(function(m){
+      return m.time;
     });
 
     var sortedMatches = _.sortBy(matches, function(m) {
@@ -142,7 +156,16 @@ function findMostConvenientRestaurants(locationData, matches) {
 
 }
 
-function findMostConvenientLoci(locationData, loci) {
+function findMostConvenientLoci(locationData, locations) {
+
+  //for some reason it was submitted with only 1 person
+  if (locationData.length === 1) {
+    return new Promise(function(resolve, reject){
+      resolve([locationData[0].latitude + ',' + locationData[0].longitude]);
+    });
+  }
+
+  var loci = findLoci(locations);
 
   //now just a list of lat/long w/o quadrant info
   lociVals = _.values(loci);
@@ -157,10 +180,10 @@ function findMostConvenientLoci(locationData, loci) {
       return -t[1].score
     });
 
-    console.log('most convenient locis are:', scores.slice(0, 2))
+    console.log('most convenient locis are:', scores.slice(0, 2));
 
     return scores.slice(0, 2).map(function(s) {
-      return s[0]
+      return s[0];
     });
 
   });
@@ -239,7 +262,7 @@ function getTravelTime(origins, destinations) {
             destinationDict[destination].origins[originId] = d.duration.value;
           } catch (e) {
             //sometimes there's an error, not sure why
-            console.log(e, row.elements);
+            console.log(e, d);
           }
         });
       });
@@ -250,8 +273,14 @@ function getTravelTime(origins, destinations) {
   return Promise.all(allPromises).then(function() {
     //finally, sum up all the vals
     _.forEach(destinationDict, function(v, k) {
-      v.total = _.sum(_.values(v.origins));
-      v.variance = variance(_.values(v.origins));
+      //sometimes there are errors from google transit matrix api
+      //so that location will be removed
+      if (_.keys(v.origins).length === 0 ){
+        delete destinationDict[k]
+      } else {
+        v.total = _.sum(_.values(v.origins));
+        v.variance = variance(_.values(v.origins));
+      }
     });
 
     var minTime = _.min(_.values(destinationDict).map(function(t) {
@@ -266,7 +295,8 @@ function getTravelTime(origins, destinations) {
     //otherwise, lean on minimizing time
     _.forEach(destinationDict, function(v, k) {
       if (origins.length > 2) v.score = (minTime / v.total * 1.5) + minVariance / v.variance;
-      else v.score = (minTime / v.total) + (minVariance / v.variance * 1.5);
+      else if (origins.length === 2) v.score = (minTime / v.total) + (minVariance / v.variance * 1.5);
+      else if (origins.length === 1) v.score = v.total;
     });
 
     return destinationDict;
@@ -289,6 +319,13 @@ function transformPreferences(preferences) {
       max = userMax;
     }
     if (userMin < min) min = userMin;
+  });
+
+  //firebase wipes out empty vals (?)
+  preferences.forEach(function(p){
+    if (!p.cuisine) p.cuisine = {};
+    if (!p.cuisine.yes) p.cuisine.yes = [];
+    if (!p.cuisine.no) p.cuisine.no = [];
   });
 
   //combine the cuisine preferences
@@ -373,10 +410,20 @@ function convertUserDataToLocationsArray(userData) {
 
 }
 
+/*
+
+expects data in the form {
+userData : [{preferences for user 1}, {preferences for user 2}],
+term : 'dinner'|'bar'
+}
+
+ */
+
 function findTopMatches(data) {
 
   var term = data.term || 'dinner';
-
+  //better yelp search term
+  term = term.toLowerCase() === 'drinks' ? 'bar' : term;
   //this has mode info and user id info attached
   var locationData = convertUserDataToLocationsArray(data.userData);
 
@@ -398,10 +445,14 @@ function findTopMatches(data) {
 
   transformedPreferences = transformPreferences(preferences);
 
-  return findMostConvenientLoci(locationData, findLoci(locations))
+  return findMostConvenientLoci(locationData, locations)
     .then(_.partial(queryYelp, term, transformedPreferences))
     .then(_.partial(filterMatchesByPreferences, transformedPreferences))
-    .then(_.partial(findMostConvenientRestaurants, locationData));
+    .then(_.partial(findMostConvenientRestaurants, locationData))
+    .catch(function(error){
+      var prettyPrintStack =  error.stack.split('\n');
+      console.log("error!", prettyPrintStack);
+        });
 }
 
 module.exports = findTopMatches
