@@ -134,6 +134,8 @@ function findMostConvenientRestaurants(locationData, matches) {
 
   return getTravelTime(locationData, destinations).then(function(destinationDict) {
 
+    debugger
+
     matches.forEach(function(m, i) {
       var timeData = destinationDict[m.coordinates.latitude + ',' + m.coordinates.longitude];
       if (timeData && timeData.variance !== NaN){
@@ -175,15 +177,6 @@ function findMostConvenientLoci(locationData, locations) {
   });
 
   return getTravelTime(locationData, destinations).then(function(times, index) {
-
-    /*
-    annoying transit matrix api error --> sometimes an address kills all results
-    so no geo info can be returned
-     */
-
-    if( _.values(times).map(function(d){return d.total}).join('') === '' ) {
-      throw new Error('Sorry, the Google Transit Matrix API couldn\'t process one or more of those locations.');
-    }
 
     scores = _.sortBy(_.toPairs(times), function(t) {
       return -t[1].score
