@@ -1,10 +1,10 @@
 //get environment variables from .env
 require('dotenv').config();
 
-var server = require('api_server');
 var firebase = require('firebase');
 var _ = require('lodash');
 
+var server = require('./api_server');
 var findTopMatches = require('./findTopMatches');
 
 //run server for now, just so old test interface is still supported
