@@ -134,8 +134,6 @@ function findMostConvenientRestaurants(locationData, matches) {
 
   return getTravelTime(locationData, destinations).then(function(destinationDict) {
 
-    debugger
-
     matches.forEach(function(m, i) {
       var timeData = destinationDict[m.coordinates.latitude + ',' + m.coordinates.longitude];
       if (timeData && timeData.variance !== NaN){
@@ -152,6 +150,8 @@ function findMostConvenientRestaurants(locationData, matches) {
       return -m.time.score
     });
 
+    console.log("found some matches for ya!", sortedMatches);
+
     return sortedMatches
 
   });
@@ -160,8 +160,9 @@ function findMostConvenientRestaurants(locationData, matches) {
 
 function findMostConvenientLoci(locationData, locations) {
 
-  //for some reason it was submitted with only 1 person
-  if (locationData.length === 1) {
+  //it was submitted with only 1 person, or everyone from the same location
+  var uniqueLocations = _.uniqBy(locationData.map(function(l){return l.latitude + ',' + l.longitude}));
+  if (locationData.length === 1 || uniqueLocations.length === 1) {
     return new Promise(function(resolve, reject){
       resolve([locationData[0].latitude + ',' + locationData[0].longitude]);
     });
@@ -273,6 +274,7 @@ function getTravelTime(origins, destinations) {
 
   //use 'all' just to verify that destinationDict has been filled
   return Promise.all(allPromises).then(function() {
+    debugger
     //finally, sum up all the vals
     _.forEach(destinationDict, function(v, k) {
       //sometimes there are errors from google transit matrix api
@@ -282,6 +284,8 @@ function getTravelTime(origins, destinations) {
       } else {
         v.total = _.sum(_.values(v.origins));
         v.variance = variance(_.values(v.origins));
+        //if variance is zero, set it to something very low to prevent NaN
+        v.variance = v.variance ? v.variance : .00000001;
       }
     });
 

@@ -73,12 +73,14 @@ function calculateTopMatch(matches, votes) {
     return topVotedPlaces[0];
   } else {
     //break the tie
-    return _.sortBy(topVotedPlaces, function(p) {
+    var sortedByTotalTime = _.sortBy(topVotedPlaces, function(p) {
       var m = matches.filter(function(m) {
         return m.id === p[0]
       })[0];
       return m.time.total;
-    })[0][0];
+    });
+
+    return sortedByTotalTime[0][0];
   }
 }
 

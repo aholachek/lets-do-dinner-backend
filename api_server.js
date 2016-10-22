@@ -21,12 +21,20 @@ if (process.env.NODE_ENV === 'development'){
 
 app.options('/', cors(corsOptions));
 
+//because heroku  free dynos go to sleep, give an option
+//for lets do dinner v1 (which only uses a worker to contact firebase)
+// to ping the server to wake it up
+app.get('/', cors(corsOptions), function(req, res){
+    return res.json({ msg : 'wake up successful'});
+});
+
 app.post('/', cors(corsOptions), function(req, res) {
+
   findTopMatches(req.body).then(function(results) {
     return res.json(results);
   }, function(error) {
     var prettyPrintStack =  error.stack.split('\n');
-    console.log("error!", prettyPrintStack);
+    console.log('error!', prettyPrintStack);
     return res.status(500).send(error.stack);
   }
   );
