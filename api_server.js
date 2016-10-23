@@ -12,7 +12,7 @@ app.use(bodyParser.json());
 //allow requests only from my website and localhost
 
 var corsOptions = {
-  origin: [/^http:\/\/alex\.holachek\.com.*/]
+  origin: [/^https:\/\/lets-do-dinner.firebaseapp.com\/*/]
 };
 
 if (process.env.NODE_ENV === 'development'){
