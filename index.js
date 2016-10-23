@@ -11,7 +11,7 @@ var findTopMatches = require('./findTopMatches');
 server();
 
 firebase.initializeApp({
-  databaseURL: 'https://letsgetdinnerfrontend.firebaseio.com/',
+  databaseURL: 'https://lets-do-dinner.firebaseio.com/',
   serviceAccount: './firebase.json'
 });
 
