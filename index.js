@@ -45,44 +45,12 @@ firebase.database().ref('/invites').on('child_added', function(snapshot) {
               });
             }
           });
-        } else if (val.stage === 'done' && !val.finalRecommendation) {
-          var finalRecommendation = calculateTopMatch(val.matches, val.submittedVotes);
-          inviteRef.update({
-            finalRecommendation: finalRecommendation,
-            stage: 'done'
-          });
         }
       });
   }
 
 });
 
-function calculateTopMatch(matches, votes) {
-  var top, topVoteNum, topVotedPlaces;
-
-  top = _.toPairs(votes);
-  top = _.sortBy(top, function(p) {
-    return -p[1].length
-  });
-  topVoteNum = top[0][1].length;
-  topVotedPlaces = top.filter(function(p) {
-    return p[1].length === topVoteNum;
-  });
-
-  if (topVotedPlaces.length === 1) {
-    return topVotedPlaces[0];
-  } else {
-    //break the tie
-    var sortedByTotalTime = _.sortBy(topVotedPlaces, function(p) {
-      var m = matches.filter(function(m) {
-        return m.id === p[0]
-      })[0];
-      return m.time.total;
-    });
-
-    return sortedByTotalTime[0][0];
-  }
-}
 
 
 firebase.database().ref('/invites').on('child_removed', function(snapshot) {
