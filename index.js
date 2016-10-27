@@ -40,7 +40,7 @@ function setDeleteTimeout(val, inviteRef) {
   //setTimeout to delete the record in 72 hours
   //this should catch older records if database went down
   //created time
-  var deleteTime = new Date(val.createdAt()).getTime()
+  var deleteTime = new Date(val.createdAt).getTime()
     //72 hours
     +
     1000 * 60 * 60 * 60 * 72;
